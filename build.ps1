@@ -81,9 +81,12 @@ $sum = (Get-FileHash "C:\out\$($zip.Name)" -Algorithm SHA256).Hash.ToLower()
 "$sum  $($zip.Name)" | Set-Content "C:\out\$($zip.Name).sha256" -Encoding ASCII
 & "$outDir\php.exe" -v
 & "$outDir\php.exe" -m | Set-Content "C:\out\php-$Version-$variant-modules.txt" -Encoding ASCII
-# Mitigations-Probe: Patch macht OOM zum sanften Fehler statt longjmp – php.exe darf dabei nicht abstürzen
-$probe = '<?php ini_set("memory_limit","8M"); $a=[]; try { while(true) $a[]=str_repeat("x",1024*1024); } catch (Throwable $e) {} echo "probe-ok\n";'
+# Patch-Nachweis: OOM endet gepatcht in zend_mm_safe_error_ex (stderr + _exit(1)), ungepatcht als Fatal Error mit exit 255
+$probe = '<?php $a=[]; while(true) $a[]=str_repeat("x",1024*1024);'
 $probe | Set-Content "$env:TEMP\probe.php" -Encoding ASCII
-$p = & "$outDir\php.exe" -n -d memory_limit=8M "$env:TEMP\probe.php" 2>&1; Write-Host "OOM-Probe: $p (exit $LASTEXITCODE)"
+$p = & "$outDir\php.exe" -n -d memory_limit=8M "$env:TEMP\probe.php" 2>&1; $rc = $LASTEXITCODE
+Write-Host "OOM-Probe: $p (exit $rc)"
+if ($rc -ne 1) { throw "OOM-Probe: exit $rc statt 1 – Patch im Binary nicht wirksam" }
 Write-Host "`nFertig: C:\out\$($zip.Name)`nSHA256: $sum"
 Stop-Transcript | Out-Null
+exit 0

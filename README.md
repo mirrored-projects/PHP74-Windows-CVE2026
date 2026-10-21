@@ -68,7 +68,19 @@ Rollback: `scriptProcessor` zurück auf `v7.4.5`, php-cgi-Prozesse beenden.
 
 Die Versionsnummer bleibt 7.4.33 – der Nachweis ist das Build-Datum in `php -v` / `phpinfo()` und die
 `SHA256SUMS` des Releases. Funktional: `build.ps1` führt eine OOM-Probe aus (Speicher bis zum `memory_limit`
-füllen); ein gepatchtes PHP beendet den Request sauber und gibt `probe-ok` aus.
+füllen). Gepatcht endet sie mit **Exit 1** und der Meldung auf stderr, ungepatcht als regulärer Fatal Error mit
+**Exit 255** – jeder andere Exit-Code lässt den Build scheitern. Selbst prüfen:
+
+```powershell
+'<?php $a=[]; while(true) $a[]=str_repeat("x",1048576);' | Set-Content probe.php
+.\php.exe -n -d memory_limit=8M probe.php; $LASTEXITCODE     # 1 = gepatcht, 255 = ungepatcht
+```
+
+**Verhaltensänderung durch den Patch:** Überschreitet ein Request `memory_limit`, beendet sich der PHP-Prozess hart
+(`_exit(1)`) – keine Shutdown-Funktionen, die Meldung landet auf stderr statt im `error_log`.
+IIS/FastCGI: nur der betroffene `php-cgi.exe` stirbt, IIS liefert 500 und startet einen neuen.
+Apache (mpm_winnt, ein Kindprozess mit allen Threads): alle gerade laufenden Requests brechen ab, Apache startet
+den Kindprozess neu.
 
 ## Quellen
 
