@@ -1,0 +1,2 @@
+# Patches müssen byte-genau bleiben – Windows-Runner checken sonst mit CRLF aus und git apply scheitert
+*.patch -text
