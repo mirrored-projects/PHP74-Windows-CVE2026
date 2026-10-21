@@ -1,0 +1,85 @@
+name: Build PHP 7.4 for Windows (CVE-2026-109618/109619 backport)
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'PHP-Version (7.4.x)'
+        default: '7.4.33'
+        required: true
+      release:
+        description: 'GitHub-Release mit den Artefakten erzeugen'
+        type: boolean
+        default: false
+  push:
+    tags: ['v7.4.*']          # z. B. v7.4.33-cve.2026-109618  -> baut und veröffentlicht automatisch
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [nts, ts]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Version bestimmen
+        id: v
+        shell: pwsh
+        run: |
+          $v = '${{ inputs.version }}'
+          if (-not $v -and '${{ github.ref_type }}' -eq 'tag') { $v = ('${{ github.ref_name }}' -replace '^v', '') -replace '-.*$', '' }
+          if (-not $v) { $v = '7.4.33' }
+          "version=$v" >> $env:GITHUB_OUTPUT
+
+      - name: Bootstrap (VS2017 Build Tools, php-sdk)
+        shell: pwsh
+        run: .\bootstrap.ps1
+
+      - name: Build ${{ matrix.variant }}
+        shell: pwsh
+        run: |
+          $p = @{ Version = '${{ steps.v.outputs.version }}' }      # Hashtable – Array-Splatting bindet '-Nts' nicht als Switch
+          if ('${{ matrix.variant }}' -eq 'nts') { $p.Nts = $true }
+          .\build.ps1 @p
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: php-${{ steps.v.outputs.version }}-${{ matrix.variant }}-win64
+          path: C:\out\*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: github.ref_type == 'tag' || inputs.release == true
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Checksums + Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cd dist
+          rm -f *.log
+          sha256sum *.zip > SHA256SUMS
+          cat SHA256SUMS
+          TAG="${GITHUB_REF_TYPE}" ; if [ "$TAG" = "tag" ]; then TAG="${GITHUB_REF_NAME}"; else TAG="v${{ inputs.version }}-cve.$(date -u +%Y%m%d%H%M)"; fi
+          NOTES="PHP $(ls *.zip | head -1 | sed -E 's/php-([0-9.]+).*/\1/') für Windows x64 (vc15), gebaut aus dem offiziellen php.net-Tarball mit dem Backport-Patch für CVE-2026-109618 / CVE-2026-109619 (php-src Branch PHP-7.4-CVE-2026-109618-109619).
+
+          Nur diese eine Sicherheitslücke ist gefixt – PHP 7.4 bleibt End-of-Life.
+
+          - \`*-nts-*\`: IIS FastCGI (php-cgi.exe), CLI
+          - \`*-ts-*\`: Apache-Modul / XAMPP
+          - \`SHA256SUMS\`: Prüfsummen"
+          gh release create "$TAG" --title "PHP $TAG (Windows x64, CVE-2026-109618 backport)" --notes "$NOTES" *.zip *.sha256 *-modules.txt SHA256SUMS
