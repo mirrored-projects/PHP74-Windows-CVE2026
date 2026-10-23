@@ -1,4 +1,4 @@
-# PHP 7.4 für Windows mit CVE-2026-109618 / CVE-2026-109619-Backport
+# PHP 7.4 für Windows mit CVE-2026-109618 / CVE-2026-109619 Backport
 
 PHP 7.4 ist End-of-Life; windows.php.net liefert keine Builds mehr. Das PHP-Projekt hat den Fix für
 CVE-2026-109618 und CVE-2026-109619 trotzdem als minimalen Quell-Backport veröffentlicht
